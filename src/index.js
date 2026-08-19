@@ -29,35 +29,50 @@ const makeReport = inngest.createFunction(
         
         const { id, topic } = event.data || {};
         
-        await step.sleep('working', '2s');
-        
-        if (topic === 'fail') {
-            console.log('💥 THROWING ERROR!');
-            throw new Error('🔥 The report oven is broken!');
+        try {
+            await step.sleep('working', '2s');
+            
+            if (topic === 'fail') {
+                console.log('💥 THROWING ERROR!');
+                // Update status to failed before throwing
+                if (id && reports[id]) {
+                    reports[id].status = 'failed';
+                    reports[id].error = 'The report oven is broken!';
+                    console.log(`❌ Report ${id} marked as failed`);
+                }
+                throw new Error('🔥 The report oven is broken!');
+            }
+            
+            if (id) {
+                reports[id] = {
+                    ...reports[id],
+                    topic,
+                    status: 'done',
+                    result: `Report: ${topic}`,
+                };
+                console.log(`✅ Report ${id} completed!`);
+            }
+            
+            return { done: true };
+        } catch (error) {
+            // If the error is already handled above, re-throw for retry
+            if (topic === 'fail' && id && reports[id]) {
+                reports[id].status = 'failed';
+                reports[id].error = error.message;
+            }
+            throw error;
         }
-        
-        if (id) {
-            reports[id] = {
-                ...reports[id],
-                topic,
-                status: 'done',
-                result: `Report: ${topic}`,
-            };
-            console.log(`✅ Report ${id} completed!`);
-        }
-        
-        return { done: true };
     }
 );
 
 // ============================================
-// FUNCTION 2: HEARTBEAT (Cron Job - Every Minute)
+// FUNCTION 2: HEARTBEAT (Cron Job)
 // ============================================
 const heartbeat = inngest.createFunction(
     {
         id: 'heartbeat',
         name: 'Heartbeat',
-        triggers: [{ cron: '* * * * *' }],  // Every minute
+        triggers: [{ cron: '* * * * *' }],
     },
     async ({ step }) => {
         console.log('💓 Heartbeat cron job running!');
@@ -119,7 +134,6 @@ app.listen(PORT, () => {
     console.log(`\n🚀 Server on port ${PORT}`);
     console.log(`📊 Dashboard: http://localhost:8288`);
     console.log(`\n📋 Functions:`);
-    console.log(`  - make-report (retries: 2, event: report/requested)`);
-    console.log(`  - heartbeat (cron: * * * * * - every minute)`);
-    console.log(`\n💡 Test heartbeat: Watch Dashboard for runs every minute`);
+    console.log(`  - make-report (retries: 2)`);
+    console.log(`  - heartbeat (cron: * * * * *)`);
 });
