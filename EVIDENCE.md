@@ -1,36 +1,44 @@
 # Evidence — Background Jobs with Inngest
 
-## Phase 0: Hello Server
-- ✅ `GET /health` returns 200
-
-## Phase 1: Inngest Connected
+## Phase 1: Inngest Connection
 - ✅ Inngest client created
-- ✅ `say-hello` function works (5s sleep)
+- ✅ `say-hello` function working (5s sleep)
 - ✅ Dashboard accessible at http://localhost:8288
 
 ## Phase 2: Background Jobs
 
-### API Endpoints
+### API Endpoints Working
+
 ```bash
-# Create report (202)
-curl -X POST http://localhost:3000/reports -H "Content-Type: application/json" -d '{"topic":"cats"}'
-# Response: {"id":"report_xxx","status":"pending"}
+# Create a report (returns 202)
+curl -X POST http://localhost:3000/reports \
+  -H "Content-Type: application/json" \
+  -d '{"topic": "cats"}'
+
+# Response:
+{"id":"report_1787098870276","status":"pending"}
 
 # Check status (pending)
-curl http://localhost:3000/reports/report_xxx
-# Response: {"id":"report_xxx","topic":"cats","status":"pending"}
+curl http://localhost:3000/reports/report_1787098870276
 
-# Trigger via Dashboard → function runs
+# Response:
+{"id":"report_1787098870276","topic":"cats","status":"pending"}
+
+# Trigger function via Dashboard
+# Open http://localhost:8288 -> make-report -> Invoke
+# Enter: {"id":"report_1787098870276","topic":"cats"}
 
 # Check status (done)
-curl http://localhost:3000/reports/report_xxx
-# Response: {"id":"report_xxx","topic":"cats","status":"done","result":"Report: cats"}
+curl http://localhost:3000/reports/report_1787098870276
+
+# Response:
+{"id":"report_1787098870276","topic":"cats","status":"done","result":"Report: cats"}
 Phase 3: Retries & Failures
 
 Failure Test
 
 bash
-# Create report with topic "fail"
+# Create a failing report
 curl -X POST http://localhost:3000/reports -H "Content-Type: application/json" -d '{"topic":"fail"}'
 Dashboard shows:
 
@@ -41,6 +49,7 @@ Final status: Failed
 Server Logs:
 
 text
+🔥 FUNCTION FIRED!
 💥 THROWING ERROR!
 Inngest function error
 Error: 🔥 The report oven is broken!
@@ -48,7 +57,14 @@ Validation (400)
 
 bash
 curl -X POST http://localhost:3000/reports -H "Content-Type: application/json" -d '{}'
-# Response: {"error": "Topic required"}
+Response: {"error": "Topic required"}
+
+Not Found (404)
+
+bash
+curl http://localhost:3000/reports/invalid-id
+Response: {"error": "Not found"}
+
 Phase 4: Cron Job
 
 Heartbeat Function
@@ -61,10 +77,20 @@ Server Logs:
 text
 💓 Heartbeat cron job running!
 📊 Summary: Total: 5, Pending: 0, Done: 4, Failed: 1
-Screenshots
+Dashboard Screenshot
 
-Dashboard: http://localhost:8288
-Runs visible for all functions
+https://./dashboard-screenshot.png
+
+All Tests Pass
+
+✅ API returns 202 in < 1 second
+✅ Status endpoint shows pending → done
+✅ Background function runs (3s work)
+✅ Retries work (3 attempts, backoff)
+✅ Cron job runs every minute
+✅ Validation (400)
+✅ Not found (404)
+✅ Dashboard shows all runs
 Date
 
 2026-08-19

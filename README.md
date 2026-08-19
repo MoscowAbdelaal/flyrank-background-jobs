@@ -82,3 +82,13 @@ Inngest Dev Server (local dashboard)
 Author
 
 Marwan Abdelaal
+
+## Dashboard
+
+![Inngest Dashboard](./dashboard-screenshot.png)
+
+Open http://localhost:8288 to see:
+- Function runs
+- Retries
+- Logs
+- Cron job executions
