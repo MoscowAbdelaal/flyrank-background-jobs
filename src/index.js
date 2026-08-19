@@ -15,13 +15,14 @@ const inngest = new Inngest({
 });
 
 // ============================================
-// FUNCTION 1: MAKE REPORT (Background Job)
+// FUNCTION 1: MAKE REPORT (with all stretches)
 // ============================================
 const makeReport = inngest.createFunction(
     {
         id: 'make-report',
         triggers: [{ event: 'report/requested' }],
         retries: 2,
+        concurrency: 2,  // Stretch 2: Only 2 reports at a time
     },
     async ({ step, event }) => {
         console.log('🔥 FUNCTION FIRED!');
@@ -29,13 +30,26 @@ const makeReport = inngest.createFunction(
         
         const { id, topic } = event.data || {};
         
+        // ============================================
+        // STRETCH 1: IDEMPOTENCY CHECK
+        // ============================================
+        if (id && reports[id]) {
+            if (reports[id].status === 'done') {
+                console.log(`🔄 Idempotency: Report ${id} already done, skipping`);
+                return { done: true, cached: true, id };
+            }
+            if (reports[id].status === 'failed') {
+                console.log(`🔄 Idempotency: Report ${id} already failed, skipping`);
+                return { done: false, cached: true, id, error: reports[id].error };
+            }
+        }
+        
         try {
             await step.sleep('working', '2s');
             
             if (topic === 'fail') {
                 console.log('💥 THROWING ERROR!');
-                // Update status to failed before throwing
-                if (id && reports[id]) {
+                if (id) {
                     reports[id].status = 'failed';
                     reports[id].error = 'The report oven is broken!';
                     console.log(`❌ Report ${id} marked as failed`);
@@ -55,8 +69,7 @@ const makeReport = inngest.createFunction(
             
             return { done: true };
         } catch (error) {
-            // If the error is already handled above, re-throw for retry
-            if (topic === 'fail' && id && reports[id]) {
+            if (id && reports[id]) {
                 reports[id].status = 'failed';
                 reports[id].error = error.message;
             }
@@ -66,7 +79,7 @@ const makeReport = inngest.createFunction(
 );
 
 // ============================================
-// FUNCTION 2: HEARTBEAT (Cron Job)
+// FUNCTION 2: HEARTBEAT (Cron Job - Every Minute)
 // ============================================
 const heartbeat = inngest.createFunction(
     {
@@ -120,20 +133,34 @@ app.post('/reports', async (req, res) => {
     res.status(202).json({ id, status: 'pending' });
 });
 
+// ============================================
+// API: GET REPORT STATUS
+// ============================================
 app.get('/reports/:id', (req, res) => {
     const r = reports[req.params.id];
     if (!r) return res.status(404).json({ error: 'Not found' });
     res.json(r);
 });
 
+// ============================================
+// HEALTH CHECK
+// ============================================
 app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
 });
 
+// ============================================
+// START SERVER
+// ============================================
 app.listen(PORT, () => {
     console.log(`\n🚀 Server on port ${PORT}`);
     console.log(`📊 Dashboard: http://localhost:8288`);
     console.log(`\n📋 Functions:`);
-    console.log(`  - make-report (retries: 2)`);
+    console.log(`  - make-report (retries: 2, concurrency: 2)`);
     console.log(`  - heartbeat (cron: * * * * *)`);
+    console.log(`\n✅ Stretch 1: Idempotency (duplicate requests skipped)`);
+    console.log(`✅ Stretch 2: Concurrency limit (max 2 at a time)`);
+    console.log(`✅ Stretch 3: Durable (job survives server restart)`);
+    console.log(`\n💡 Test:`);
+    console.log(`   curl -X POST http://localhost:${PORT}/reports -H "Content-Type: application/json" -d '{"topic":"cats"}'`);
 });
