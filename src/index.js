@@ -6,113 +6,95 @@ require('dotenv').config();
 
 const app = express();
 app.use(express.json());
+const PORT = 3000;
 
-const PORT = process.env.PORT || 3000;
+const reports = {};
 
-// ============================================
-// INNGEST CLIENT
-// ============================================
 const inngest = new Inngest({
     id: 'report-api',
     isDev: true,
 });
 
 // ============================================
-// INNGEST FUNCTIONS
+// FUNCTION
 // ============================================
-
-// Function 1: Say Hello (test function)
-const sayHello = inngest.createFunction(
-    {
-        id: 'say-hello',
-        name: 'Say Hello',
-        retries: 0,
-    },
-    { event: 'test/hello' },
+const makeReport = inngest.createFunction(
+    { id: 'make-report', triggers: [{ event: 'report/requested' }] },
     async ({ step, event }) => {
-        console.log('👋 Say hello function started!');
-        console.log('📦 Event data:', event.data);
-        await step.sleep('wait-a-bit', '5s');
-        console.log('✅ Say hello function completed!');
-        return {
-            message: 'Hello from the background!',
-            received: event.data,
-        };
-    }
-);
-
-// ============================================
-// INNGEST SERVE
-// ============================================
-app.use(
-    '/api/inngest',
-    serve({
-        client: inngest,
-        functions: [sayHello],
-    })
-);
-
-// ============================================
-// API ENDPOINT TO TRIGGER EVENT (Using HTTP to Dev Server)
-// ============================================
-app.post('/trigger/hello', async (req, res) => {
-    try {
-        console.log('📤 Sending event via HTTP to Dev Server...');
-
-        // Send event directly to the Dev Server's HTTP endpoint
-        const response = await axios.post(
-            'http://localhost:8288/api/events',
-            {
-                name: 'test/hello',
-                data: {
-                    message: req.body.message || 'Hello from API!',
-                    timestamp: new Date().toISOString(),
-                    source: 'postman',
-                },
-            },
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-
-        console.log('✅ Event sent successfully!');
-        res.json({
-            success: true,
-            message: 'Event sent!',
-            response: response.data,
-        });
-    } catch (error) {
-        console.error('❌ Error sending event:', error.message);
-        if (error.response) {
-            console.error('Response data:', error.response.data);
-            console.error('Response status:', error.response.status);
+        console.log('🔥 FUNCTION FIRED!');
+        console.log('📦 Event:', event.data);
+        const { id, topic } = event.data || {};
+        await step.sleep('working', '3s');
+        if (id) {
+            reports[id] = { ...reports[id], topic, status: 'done', result: `Report: ${topic}` };
+            console.log(`✅ Report ${id} completed!`);
         }
-        res.status(500).json({
-            error: error.message,
-            details: error.response?.data || 'Unknown error',
-        });
+        return { done: true };
     }
-});
+);
+
+app.use('/api/inngest', serve({ client: inngest, functions: [makeReport] }));
 
 // ============================================
-// HEALTH CHECK
+// TRIGGER FUNCTION VIA EVENT
 // ============================================
+async function triggerWithEvent(id, topic) {
+    try {
+        // Send event using the SDK - this is the intended way
+        const result = await inngest.send({
+            name: 'report/requested',
+            data: { id, topic },
+        });
+        console.log('✅ Event sent via SDK');
+        return true;
+    } catch (error) {
+        console.log('❌ SDK failed:', error.message);
+        return false;
+    }
+}
+
+// ============================================
+// API: CREATE REPORT
+// ============================================
+app.post('/reports', async (req, res) => {
+    const { topic } = req.body;
+    if (!topic) return res.status(400).json({ error: 'Topic required' });
+    const id = `report_${Date.now()}`;
+    reports[id] = { id, topic, status: 'pending' };
+    
+    console.log(`📝 Report ${id} created`);
+    
+    // Try to trigger via SDK
+    const triggered = await triggerWithEvent(id, topic);
+    
+    if (triggered) {
+        console.log('✅ Function should trigger automatically!');
+    } else {
+        console.log(`⚠️ SDK failed. Please check the Dashboard.`);
+        console.log(`   To manually trigger, use: {"id":"${id}","topic":"${topic}"}`);
+    }
+    
+    res.status(202).json({ id, status: 'pending' });
+});
+
+app.get('/reports/:id', (req, res) => {
+    const r = reports[req.params.id];
+    if (!r) return res.status(404).json({ error: 'Not found' });
+    res.json(r);
+});
+
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({ status: 'ok' });
 });
 
-// ============================================
-// START SERVER
-// ============================================
 app.listen(PORT, () => {
-    console.log(`\n🚀 Server running at http://localhost:${PORT}`);
-    console.log(`📚 Health: http://localhost:${PORT}/health`);
-    console.log(`📡 Inngest: http://localhost:${PORT}/api/inngest`);
-    console.log(`🔔 Trigger: http://localhost:${PORT}/trigger/hello`);
+    console.log(`\n🚀 Server on port ${PORT}`);
     console.log(`📊 Dashboard: http://localhost:8288`);
-    console.log(`\n💡 Test: curl -X POST http://localhost:${PORT}/trigger/hello -H "Content-Type: application/json" -d '{"message":"test"}'`);
+    console.log(`\n📋 Function: make-report`);
+    console.log(`\n🔴 IMPORTANT: The SDK event sending is not working.`);
+    console.log(`📌 To trigger the function, use the Dashboard:`);
+    console.log(`   1. Open http://localhost:8288`);
+    console.log(`   2. Click on 'make-report'`);
+    console.log(`   3. Click 'Invoke'`);
+    console.log(`   4. Enter: {"id":"report_xxx","topic":"cats"}`);
 });
-
-module.exports = app;
