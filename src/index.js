@@ -1,7 +1,6 @@
 const express = require('express');
 const { Inngest } = require('inngest');
 const { serve } = require('inngest/express');
-const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
@@ -16,42 +15,71 @@ const inngest = new Inngest({
 });
 
 // ============================================
-// FUNCTION
+// FUNCTION 1: MAKE REPORT (Background Job)
 // ============================================
 const makeReport = inngest.createFunction(
-    { id: 'make-report', triggers: [{ event: 'report/requested' }] },
+    {
+        id: 'make-report',
+        triggers: [{ event: 'report/requested' }],
+        retries: 2,
+    },
     async ({ step, event }) => {
         console.log('🔥 FUNCTION FIRED!');
         console.log('📦 Event:', event.data);
+        
         const { id, topic } = event.data || {};
-        await step.sleep('working', '3s');
+        
+        await step.sleep('working', '2s');
+        
+        if (topic === 'fail') {
+            console.log('💥 THROWING ERROR!');
+            throw new Error('🔥 The report oven is broken!');
+        }
+        
         if (id) {
-            reports[id] = { ...reports[id], topic, status: 'done', result: `Report: ${topic}` };
+            reports[id] = {
+                ...reports[id],
+                topic,
+                status: 'done',
+                result: `Report: ${topic}`,
+            };
             console.log(`✅ Report ${id} completed!`);
         }
+        
         return { done: true };
     }
 );
 
-app.use('/api/inngest', serve({ client: inngest, functions: [makeReport] }));
-
 // ============================================
-// TRIGGER FUNCTION VIA EVENT
+// FUNCTION 2: HEARTBEAT (Cron Job - Every Minute)
 // ============================================
-async function triggerWithEvent(id, topic) {
-    try {
-        // Send event using the SDK - this is the intended way
-        const result = await inngest.send({
-            name: 'report/requested',
-            data: { id, topic },
-        });
-        console.log('✅ Event sent via SDK');
-        return true;
-    } catch (error) {
-        console.log('❌ SDK failed:', error.message);
-        return false;
+const heartbeat = inngest.createFunction(
+    {
+        id: 'heartbeat',
+        name: 'Heartbeat',
+        triggers: [{ cron: '* * * * *' }],  // Every minute
+    },
+    async ({ step }) => {
+        console.log('💓 Heartbeat cron job running!');
+        
+        const total = Object.keys(reports).length;
+        const pending = Object.values(reports).filter(r => r.status === 'pending').length;
+        const done = Object.values(reports).filter(r => r.status === 'done').length;
+        const failed = Object.values(reports).filter(r => r.status === 'failed').length;
+        
+        console.log(`📊 Summary: Total: ${total}, Pending: ${pending}, Done: ${done}, Failed: ${failed}`);
+        
+        return {
+            total,
+            pending,
+            done,
+            failed,
+            timestamp: new Date().toISOString(),
+        };
     }
-}
+);
+
+app.use('/api/inngest', serve({ client: inngest, functions: [makeReport, heartbeat] }));
 
 // ============================================
 // API: CREATE REPORT
@@ -64,14 +92,14 @@ app.post('/reports', async (req, res) => {
     
     console.log(`📝 Report ${id} created`);
     
-    // Try to trigger via SDK
-    const triggered = await triggerWithEvent(id, topic);
-    
-    if (triggered) {
-        console.log('✅ Function should trigger automatically!');
-    } else {
-        console.log(`⚠️ SDK failed. Please check the Dashboard.`);
-        console.log(`   To manually trigger, use: {"id":"${id}","topic":"${topic}"}`);
+    try {
+        await inngest.send({
+            name: 'report/requested',
+            data: { id, topic },
+        });
+        console.log('✅ Event sent');
+    } catch (error) {
+        console.log('⚠️ SDK error:', error.message);
     }
     
     res.status(202).json({ id, status: 'pending' });
@@ -90,11 +118,8 @@ app.get('/health', (req, res) => {
 app.listen(PORT, () => {
     console.log(`\n🚀 Server on port ${PORT}`);
     console.log(`📊 Dashboard: http://localhost:8288`);
-    console.log(`\n📋 Function: make-report`);
-    console.log(`\n🔴 IMPORTANT: The SDK event sending is not working.`);
-    console.log(`📌 To trigger the function, use the Dashboard:`);
-    console.log(`   1. Open http://localhost:8288`);
-    console.log(`   2. Click on 'make-report'`);
-    console.log(`   3. Click 'Invoke'`);
-    console.log(`   4. Enter: {"id":"report_xxx","topic":"cats"}`);
+    console.log(`\n📋 Functions:`);
+    console.log(`  - make-report (retries: 2, event: report/requested)`);
+    console.log(`  - heartbeat (cron: * * * * * - every minute)`);
+    console.log(`\n💡 Test heartbeat: Watch Dashboard for runs every minute`);
 });

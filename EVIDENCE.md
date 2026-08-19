@@ -44,3 +44,28 @@ text
 🔥 FUNCTION FIRED!
 📦 Event: { id: 'report_1787098870276', topic: 'cats' }
 ✅ Report report_1787098870276 completed!
+
+## Phase 4: Cron Job
+
+### Heartbeat Function
+
+- **Trigger:** `* * * * *` (every minute)
+- **Function:** `heartbeat`
+- **Action:** Logs summary of reports
+
+**Server Logs:**
+💓 Heartbeat cron job running!
+📊 Summary: Total: X, Pending: X, Done: X, Failed: X
+
+text
+
+**Dashboard:**
+- Runs every minute
+- Visible at http://localhost:8288
+- Shows the summary data
+
+### Cron Expressions
+
+- `* * * * *` = Every minute
+- `0 8 * * *` = Every day at 08:00
+- `0 22 * * 0` = Every Sunday at 22:00
