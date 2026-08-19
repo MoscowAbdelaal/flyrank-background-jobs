@@ -1,0 +1,14 @@
+run: npm run dev
+test: npm test
+base_url: http://localhost:3000
+
+endpoints:
+  - path: /health
+    method: GET
+    description: Health check
+  - path: /reports
+    method: POST
+    description: Create a report (returns 202)
+  - path: /reports/:id
+    method: GET
+    description: Get report status

@@ -1,71 +1,70 @@
 # Evidence — Background Jobs with Inngest
 
-## Phase 1: Inngest Connection
+## Phase 0: Hello Server
+- ✅ `GET /health` returns 200
+
+## Phase 1: Inngest Connected
 - ✅ Inngest client created
-- ✅ `say-hello` function working (5s sleep)
+- ✅ `say-hello` function works (5s sleep)
 - ✅ Dashboard accessible at http://localhost:8288
 
 ## Phase 2: Background Jobs
 
-### API Endpoints Working
-
+### API Endpoints
 ```bash
-# Create a report (returns 202)
-curl -X POST http://localhost:3000/reports \
-  -H "Content-Type: application/json" \
-  -d '{"topic": "cats"}'
-
-# Response:
-{"id":"report_1787098870276","status":"pending"}
+# Create report (202)
+curl -X POST http://localhost:3000/reports -H "Content-Type: application/json" -d '{"topic":"cats"}'
+# Response: {"id":"report_xxx","status":"pending"}
 
 # Check status (pending)
-curl http://localhost:3000/reports/report_1787098870276
+curl http://localhost:3000/reports/report_xxx
+# Response: {"id":"report_xxx","topic":"cats","status":"pending"}
 
-# Response:
-{"id":"report_1787098870276","topic":"cats","status":"pending"}
-
-# Trigger function via Dashboard
-# Open http://localhost:8288 -> make-report -> Invoke
-# Enter: {"id":"report_1787098870276","topic":"cats"}
+# Trigger via Dashboard → function runs
 
 # Check status (done)
-curl http://localhost:3000/reports/report_1787098870276
+curl http://localhost:3000/reports/report_xxx
+# Response: {"id":"report_xxx","topic":"cats","status":"done","result":"Report: cats"}
+Phase 3: Retries & Failures
 
-# Response:
-{"id":"report_1787098870276","topic":"cats","status":"done","result":"Report: cats"}
-Inngest Dashboard
+Failure Test
 
-Function: make-report
-Trigger: report/requested
-Runs visible at http://localhost:8288
-Server Logs
+bash
+# Create report with topic "fail"
+curl -X POST http://localhost:3000/reports -H "Content-Type: application/json" -d '{"topic":"fail"}'
+Dashboard shows:
+
+Attempt 1: Failed ❌
+Attempt 2: Failed ❌ (backoff)
+Attempt 3: Failed ❌ (backoff)
+Final status: Failed
+Server Logs:
 
 text
-🔥 FUNCTION FIRED!
-📦 Event: { id: 'report_1787098870276', topic: 'cats' }
-✅ Report report_1787098870276 completed!
+💥 THROWING ERROR!
+Inngest function error
+Error: 🔥 The report oven is broken!
+Validation (400)
 
-## Phase 4: Cron Job
+bash
+curl -X POST http://localhost:3000/reports -H "Content-Type: application/json" -d '{}'
+# Response: {"error": "Topic required"}
+Phase 4: Cron Job
 
-### Heartbeat Function
+Heartbeat Function
 
-- **Trigger:** `* * * * *` (every minute)
-- **Function:** `heartbeat`
-- **Action:** Logs summary of reports
+Trigger: * * * * * (every minute)
+Logs: 💓 Heartbeat cron job running!
+Summary: Total, Pending, Done, Failed
+Server Logs:
 
-**Server Logs:**
+text
 💓 Heartbeat cron job running!
-📊 Summary: Total: X, Pending: X, Done: X, Failed: X
+📊 Summary: Total: 5, Pending: 0, Done: 4, Failed: 1
+Screenshots
 
-text
+Dashboard: http://localhost:8288
+Runs visible for all functions
+Date
 
-**Dashboard:**
-- Runs every minute
-- Visible at http://localhost:8288
-- Shows the summary data
-
-### Cron Expressions
-
-- `* * * * *` = Every minute
-- `0 8 * * *` = Every day at 08:00
-- `0 22 * * 0` = Every Sunday at 22:00
+2026-08-19
